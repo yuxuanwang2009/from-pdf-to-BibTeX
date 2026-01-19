@@ -1,9 +1,75 @@
 import json
+import re
 from llm_helper import LLMHelper
 
 class LLMController:
     def __init__(self, api_key, provider="auto"):
         self.llm = LLMHelper(api_key=api_key, provider=provider)
+
+    def resolve_bibliography_range(self, full_text):
+        """
+        Uses the LLM to identify the bibliography page range from full PDF text.
+        Returns a dict with start_page/end_page (1-based) or None if not found.
+        """
+        prompt = f"""
+        You are an expert at identifying bibliography/reference sections in PDFs.
+
+        INPUT:
+        The full PDF text is provided with page markers like:
+        --- Page 1 ---
+        ...content...
+        --- Page 2 ---
+        ...content...
+
+        TASK:
+        Find the page range that contains the bibliography/references section.
+
+        RULES:
+        - Only use the provided text and page markers.
+        - Return 1-based page numbers inclusive.
+        - If the bibliography is not found, return nulls.
+
+        OUTPUT (JSON ONLY):
+        {{
+          "start_page": 12,
+          "end_page": 18,
+          "reason": "Found 'References' heading and numbered entries."
+        }}
+
+        FULL TEXT:
+        \"\"\"{full_text}\"\"\"
+        """
+
+        raw = self.llm.custom_query(prompt, json_mode=True, temperature=0)
+        if not raw:
+            return None
+        try:
+            data = json.loads(raw)
+            start_page = data.get("start_page")
+            end_page = data.get("end_page")
+            if isinstance(start_page, int) and isinstance(end_page, int):
+                return {
+                    "start_page": start_page,
+                    "end_page": end_page,
+                    "reason": data.get("reason", ""),
+                }
+        except Exception:
+            start_match = re.search(r'"?start_page"?\s*[:=]\s*(\d+)', raw)
+            end_match = re.search(r'"?end_page"?\s*[:=]\s*(\d+)', raw)
+            if start_match and end_match:
+                return {
+                    "start_page": int(start_match.group(1)),
+                    "end_page": int(end_match.group(1)),
+                    "reason": "",
+                }
+            range_match = re.search(r'(\d+)\s*[-–—]\s*(\d+)', raw)
+            if range_match:
+                return {
+                    "start_page": int(range_match.group(1)),
+                    "end_page": int(range_match.group(2)),
+                    "reason": "",
+                }
+        return None
 
     def resolve_citation(self, selection_text, context_text):
         """
@@ -25,6 +91,7 @@ class LLMController:
         1. ANALYZE the Selection:
            - Identify EVERY SINGLE citation handle in the text, even if they are far apart (e.g. "...[1]... and also [5]").
            - EXPAND ranges: "[1-3]" -> 1, 2, 3.
+           - Range separators may include "-", "–", "—", "‑", "−", "﹣", "－". Treat them as equivalent.
            - IF the selection is a bibliography list, parse all lines.
         
         2. LOCATE in Context:

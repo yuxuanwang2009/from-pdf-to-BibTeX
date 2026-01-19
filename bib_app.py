@@ -268,8 +268,29 @@ class BibApp:
 
     def _fetch_context_thread(self):
         try:
-            # Load FULL context (or smart subset handled by engine)
-            self.current_context = self.pdf_engine.get_context_text(page_count=None)
+            # Load FULL context, then ask the LLM to locate the bibliography range.
+            full_text = self.pdf_engine.get_context_text(page_count=None, force_full=True)
+            if not full_text:
+                self.update_status("Context Load Failed (Empty).")
+                return
+
+            self.update_status(f"Context Loaded ({len(full_text)} chars). Locating bibliography...")
+
+            narrowed_context = ""
+            if self.llm_controller:
+                range_info = self.llm_controller.resolve_bibliography_range(full_text)
+                if range_info:
+                    start_page = range_info.get("start_page")
+                    end_page = range_info.get("end_page")
+                    if isinstance(start_page, int) and isinstance(end_page, int):
+                        narrowed_context = self.pdf_engine.get_context_text_range(start_page, end_page)
+
+                    if narrowed_context:
+                        self.current_context = narrowed_context
+                        self.update_status(f"Context narrowed to pages {start_page}-{end_page}. Ready.")
+                        return
+
+            self.current_context = full_text
             self.update_status(f"Context Loaded ({len(self.current_context)} chars). Ready.")
         except Exception as e:
             print(f"Context error: {e}")

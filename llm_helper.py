@@ -95,24 +95,28 @@ class LLMHelper:
         except Exception as e:
             return False, f"Connection Failed: {str(e)}"
 
-    def custom_query(self, prompt):
+    def custom_query(self, prompt, json_mode=False, temperature=0):
         """
         Executes a raw prompt against the configured LLM.
         """
         if not self.is_configured:
             return None
-        return self._query_llm(prompt)
+        return self._query_llm(prompt, json_mode=json_mode, temperature=temperature)
 
-    def _query_llm(self, prompt, json_mode=False):
+    def _query_llm(self, prompt, json_mode=False, temperature=0):
         """Helper to handle provider differences"""
         try:
             if self.provider == "gemini" and HAS_GENAI:
-                response = self.model.generate_content(prompt)
+                response = self.model.generate_content(
+                    prompt,
+                    generation_config={"temperature": temperature},
+                )
                 return self._clean_llm_output(response.text)
             elif self.provider == "openai" and self.client:
                 kwargs = {
                     "model": self.model_name,
-                    "messages": [{"role": "user", "content": prompt}]
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": temperature,
                 }
                 if json_mode:
                     kwargs["response_format"] = { "type": "json_object" }

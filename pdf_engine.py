@@ -31,7 +31,7 @@ class PDFEngine:
         page = self.doc[page_num]
         return page.get_text("text", clip=rect)
 
-    def get_context_text(self, page_count=None) -> str:
+    def get_context_text(self, page_count=None, force_full=False) -> str:
         """
         Returns the text of the PDF to serve as bibliography context.
         Defaults to FULL DOCUMENT to ensure all references are visible.
@@ -47,12 +47,12 @@ class PDFEngine:
         # Heuristic: If requested page_count is None, try to get everything.
         # But if document is huge (> 100 pages), fallback to First 10 + Last 20.
         if page_count is None:
-            if total_pages > 100:
+            if force_full or total_pages <= 100:
+                pages_to_read = range(total_pages)
+            else:
                 print(f"[PDF Engine] Large document ({total_pages} pages). Using tailored context.")
                 # First 5 pages (Intro) + Last 30 pages (Refs)
                 pages_to_read = list(range(0, 5)) + list(range(max(5, total_pages - 30), total_pages))
-            else:
-               pages_to_read = range(total_pages)
         else:
             # Legacy "Last N" mode if specifically requested
             start_page = max(0, total_pages - page_count)
@@ -63,6 +63,27 @@ class PDFEngine:
             full_text += f"\n--- Page {i+1} ---\n"
             full_text += self.doc[i].get_text()
             
+        return full_text
+
+    def get_context_text_range(self, start_page: int, end_page: int) -> str:
+        """
+        Returns text for a specific 1-based inclusive page range.
+        """
+        if not self.doc:
+            return ""
+
+        total_pages = len(self.doc)
+        start_idx = max(0, start_page - 1)
+        end_idx = min(total_pages - 1, end_page - 1)
+
+        if start_idx > end_idx:
+            return ""
+
+        full_text = ""
+        for i in range(start_idx, end_idx + 1):
+            full_text += f"\n--- Page {i+1} ---\n"
+            full_text += self.doc[i].get_text()
+
         return full_text
 
     def find_citations_on_page(self, page_num: int) -> List[Tuple[fitz.Rect, str]]:
