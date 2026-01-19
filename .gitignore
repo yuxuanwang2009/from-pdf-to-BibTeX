@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.DS_Store
+.env
+.venv
+venv/
+legacy/
+*.pdf
+.bib_extractor_config.json
+texput.log
+tests/test_pdfs/
