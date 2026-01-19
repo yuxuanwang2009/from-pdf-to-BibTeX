@@ -47,12 +47,8 @@ class PDFEngine:
         # Heuristic: If requested page_count is None, try to get everything.
         # But if document is huge (> 100 pages), fallback to First 10 + Last 20.
         if page_count is None:
-            if force_full or total_pages <= 100:
-                pages_to_read = range(total_pages)
-            else:
-                print(f"[PDF Engine] Large document ({total_pages} pages). Using tailored context.")
-                # First 5 pages (Intro) + Last 30 pages (Refs)
-                pages_to_read = list(range(0, 5)) + list(range(max(5, total_pages - 30), total_pages))
+            # Always load full text for LLM analysis, regardless of size
+            pages_to_read = range(total_pages)
         else:
             # Legacy "Last N" mode if specifically requested
             start_page = max(0, total_pages - page_count)
@@ -85,14 +81,3 @@ class PDFEngine:
             full_text += self.doc[i].get_text()
 
         return full_text
-
-    def find_citations_on_page(self, page_num: int) -> List[Tuple[fitz.Rect, str]]:
-        """
-        Legacy method required by GUI (render_page).
-        Returns empty list as we no longer pre-calculate citation boxes.
-        """
-        return []
-        
-    def get_bib_entry(self, key: str) -> str:
-        # Legacy placeholder
-        return ""

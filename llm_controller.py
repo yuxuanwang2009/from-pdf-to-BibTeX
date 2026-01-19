@@ -15,26 +15,33 @@ class LLMController:
         You are an expert at identifying bibliography/reference sections in PDFs.
 
         INPUT:
-        The full PDF text is provided with page markers like:
-        --- Page 1 ---
-        ...content...
-        --- Page 2 ---
-        ...content...
+        The full PDF text is provided with page markers (e.g., --- Page N ---).
 
         TASK:
-        Find the page range that contains the bibliography/references section.
+        Identify the START and END page numbers of the bibliography/references section.
 
-        RULES:
-        - Only use the provided text and page markers.
-        - Return 1-based page numbers inclusive.
-        - If the bibliography is not found, return nulls.
+        CRITICAL INSTRUCTIONS:
+        1.  **LOCATE THE SECTION**: Look for a section heading like "References", "Bibliography", or "Literature Cited".
+            -   **IGNORE** the Table of Contents (ToC). A ToC line like "References ...... 42" is NOT the section.
+            -   **IGNORE** internal text references like "see References section".
+
+        2.  **VERIFY CONTENT**: The pages MUST contain a list of citations.
+            -   Look for citation patterns like: `[1]`, `[2]`, `1.`, `2.`, `Smith, J. (2020)`.
+            -   If a page has the header "References" but contains only "...... 12" or similar dots/page numbers, it is a ToC page. DO NOT select it.
+
+        3.  **DETERMINE RANGE**:
+            -   **start_page**: The page where the bibliography heading appears.
+            -   **end_page**: The last page containing citation entries.
+            -   Note: The bibliography might end *before* Appendices or continue to the very end of the document.
 
         OUTPUT (JSON ONLY):
         {{
           "start_page": 12,
           "end_page": 18,
-          "reason": "Found 'References' heading and numbered entries."
+          "reason": "Found 'References' heading followed by [1]..[20] citations."
         }}
+        
+        If NOT found, return null for values.
 
         FULL TEXT:
         \"\"\"{full_text}\"\"\"
