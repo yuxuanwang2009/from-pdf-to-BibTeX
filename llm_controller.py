@@ -71,10 +71,45 @@ class LLMController:
                 }
         return None
 
-    def resolve_citation(self, selection_text, context_text):
+    def detect_citation_style(self, first_pages_text):
+        """
+        Analyzes the first few pages (text) to identify the citation style used in the MAIN BODY.
+        """
+        prompt = f"""
+        You are an expert at analyzing academic documents.
+        
+        TASK:
+        1. Read the input text (which covers the first few pages of a PDF).
+        2. Locate the start of the MAIN BODY TEXT (Introduction or first chapter).
+           - IGNORE the Abstract, Table of Contents, Title, and Authors list.
+        3. Identify the citation style used *within that main body text*.
+        
+        INPUT TEXT:
+        \"\"\"{first_pages_text}\"\"\"
+        
+        INSTRUCTIONS:
+        - Determine the specific style. Common styles:
+           - "Numeric Brackets": [1], [2-5]
+           - "Author-Year": (Smith 2020), (Jones et al., 2021)
+           - "Superscript": Word^1 or Word1
+           - "Alpha-Numeric": [Smi20]
+        - If the document uses footnotes for citations, return "Footnotes".
+        - If no clear citations are found in the main text, return "Unknown/Generic".
+        
+        OUTPUT:
+        Return ONLY a short description string of the style. Do not explain.
+        Example: "Numeric Brackets"
+        """
+        return self.llm.custom_query(prompt).strip()
+
+    def resolve_citation(self, selection_text, context_text, style_hint=None):
         """
         Analyzes the user's selection and the document context to return a BibTeX entry.
         """
+        style_instruction = ""
+        if style_hint and "Unknown" not in style_hint:
+             style_instruction = f"NOTE: The document uses '{style_hint}' citation style. STRICTLY enforce this style when identifying handles."
+
         prompt = f"""
         You are an expert Research Assistant and BibTeX Resolver.
         
@@ -89,7 +124,18 @@ class LLMController:
 
         INSTRUCTIONS:
         1. ANALYZE the Selection:
-           - Identify EVERY SINGLE citation handle in the text, even if they are far apart (e.g. "...[1]... and also [5]").
+           {style_instruction}
+           - Identify ONLY explicit citation handles. Valid formats include:
+             - Numeric: "[1]", "[1-3]", "[1, 5]".
+             - Author-Year: "(Smith 2020)", "(Doe, 2021)", "(Jones et al. 2022)", "(Wang et al., 2024a)".
+             - Organization-Year: "(Art of Problem Solving, 2025)", "(OpenAI 2023)".
+             - Multiple Author-Year: "(Doe 2020; Lee 2021)", "(Smith, 2010; Jones, 2012)".
+             - Textual: "Ref. 12", "Reference 3", "Refs. 4-5".
+           - IGNORE numbers that are part of the text, such as "Fig. 2", "2D", "equation (5)", "Section 3".
+           - IF the selection does NOT contain any clear citation handle:
+             - Return exactly: "% No valid citation handles found in selection."
+             - DO NOT hallucinate a reference just because the text discusses a topic.
+             - DO NOT guess.
            - EXPAND ranges: "[1-3]" -> 1, 2, 3.
            - Range separators may include "-", "–", "—", "‑", "−", "﹣", "－". Treat them as equivalent.
            - IF the selection is a bibliography list, parse all lines.
@@ -106,6 +152,7 @@ class LLMController:
         4. OUTPUT:
            - Return a block of BibTeX entries, separated by newlines.
            - Return ONLY the BibTeX. No markdown, no conversation.
+           - If no valid citation handles are found, return exactly: "% No valid citation handles found in selection."
            - Error messages, if any, need to be commented out using "%".
         """
         

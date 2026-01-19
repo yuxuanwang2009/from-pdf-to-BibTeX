@@ -125,7 +125,7 @@ class LLMHelper:
                 return self._clean_llm_output(completion.choices[0].message.content)
         except Exception as e:
             print(f"LLM Query Error: {e}")
-            return None
+            raise e # Propagate error to caller (bib_app.py) for display
             
     def _clean_llm_output(self, text):
         # Remove markdown code blocks

@@ -14,13 +14,59 @@ class BibApp:
         self.root.title("PDF Bib Extractor (LLM-Only)")
         self.root.geometry("1400x900")
 
+        # --- Visual Style & Theme ---
+        self.colors = {
+            "bg_root": "#2E2E2E",      # Dark grey window background
+            "bg_panel": "#383838",     # Slightly lighter control panel
+            "fg_text": "#E0E0E0",      # Light grey text
+            "accent": "#61AFEF",       # Blue accent
+            "btn_bg": "#444444",       # Button background
+            "btn_fg": "#FFFFFF",       # Button text
+            "entry_bg": "#252525",     # Entry/Text background
+            "canvas_bg": "#404040",    # PDF Canvas background
+            "success": "#98C379",      # Green
+            "error": "#E06C75"         # Red
+        }
+
+        self.root.configure(bg=self.colors["bg_root"])
+        
+        self.style = ttk.Style()
+        self.style.theme_use('clam')
+        
+        # Common Styles
+        self.style.configure("TFrame", background=self.colors["bg_panel"])
+        self.style.configure("Root.TFrame", background=self.colors["bg_root"])
+        
+        self.style.configure("TLabel", background=self.colors["bg_panel"], foreground=self.colors["fg_text"], font=("Helvetica", 11))
+        self.style.configure("Header.TLabel", font=("Helvetica", 12, "bold"), foreground=self.colors["accent"])
+        self.style.configure("Status.TLabel", font=("Helvetica", 10, "italic"), foreground="gray")
+        
+        self.style.configure("TButton", 
+                             font=("Helvetica", 11), 
+                             background=self.colors["btn_bg"], 
+                             foreground=self.colors["btn_fg"], 
+                             borderwidth=1, 
+                             focusthickness=3, 
+                             focuscolor="none")
+        self.style.map("TButton", background=[("active", "#555555"), ("pressed", "#222222")])
+        
+        self.style.configure("TLabelframe", background=self.colors["bg_panel"], foreground=self.colors["fg_text"], borderwidth=1)
+        self.style.configure("TLabelframe.Label", background=self.colors["bg_panel"], foreground=self.colors["accent"], font=("Helvetica", 10, "bold"))
+        
+        self.style.configure("TEntry", fieldbackground=self.colors["entry_bg"], foreground=self.colors["fg_text"], insertcolor="white", borderwidth=0)
+        
+        # ----------------------------
+
         self.pdf_engine = PDFEngine()
         self.llm_controller = None
         self.current_context = "" # Holds text of last ~15 pages
         
         self.current_page = 0
         self.image_ref = None # Keep reference to avoid GC
+        self.current_page = 0
+        self.image_ref = None # Keep reference to avoid GC
         self.citation_rects = [] # Not used in new logic but kept for safety
+        self.citation_style_hint = None # Stores detected style (e.g. "Numeric")
 
         # State
         self.output_dir = os.path.expanduser("~/Documents/BibExtractor")
@@ -57,16 +103,11 @@ class BibApp:
 
 
     def _setup_ui(self):
-        # Layout: Fixed Frames
-        self.viewer_frame = tk.Frame(self.root, bg="gray")
+        # --- Left: PDF Viewer (Canvas) ---
+        self.viewer_frame = tk.Frame(self.root, bg=self.colors["bg_root"])
         self.viewer_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        self.control_frame = tk.Frame(self.root, padx=10, pady=10, width=450)
-        self.control_frame.pack(side=tk.RIGHT, fill=tk.Y)
-        self.control_frame.pack_propagate(False)
-
-        # Canvas
-        self.canvas = tk.Canvas(self.viewer_frame, bg="#404040") 
+        self.canvas = tk.Canvas(self.viewer_frame, bg=self.colors["canvas_bg"], highlightthickness=0) 
         self.canvas.pack(fill=tk.BOTH, expand=True)
         
         # Bindings
@@ -79,78 +120,75 @@ class BibApp:
         self.root.bind("<Right>", lambda e: self.next_page())
         
         # --- Right: Controls ---
+        self.control_frame = tk.Frame(self.root, width=400, bg=self.colors["bg_panel"])
+        self.control_frame.pack(side=tk.RIGHT, fill=tk.Y)
+        self.control_frame.pack_propagate(False)
         
-        # Top Controls
-        btn_frame = tk.Frame(self.control_frame)
-        btn_frame.pack(fill=tk.X, pady=5)
-        
-        # Open PDF (Disabled initially)
-        self.btn_open = tk.Button(btn_frame, text="Open PDF", command=self.open_pdf, state="disabled")
-        self.btn_open.pack(side=tk.LEFT, padx=2)
-        
-        # Navigation
-        tk.Button(btn_frame, text="<", command=self.prev_page).pack(side=tk.LEFT, padx=5)
-        self.lbl_page = tk.Label(btn_frame, text="Page: 0/0")
-        self.lbl_page.pack(side=tk.LEFT, padx=2)
-        tk.Button(btn_frame, text=">", command=self.next_page).pack(side=tk.LEFT, padx=5)
+        # Padding Container
+        content_box = ttk.Frame(self.control_frame, style="TFrame")
+        content_box.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
 
-        # Options Frame
-        opt_frame = tk.LabelFrame(self.control_frame, text="Setup")
-        opt_frame.pack(fill=tk.X, pady=10)
+        # 1. Navigation & Open
+        nav_frame = ttk.Frame(content_box)
+        nav_frame.pack(fill=tk.X, pady=(0, 20))
         
-        # API Key Row
-        key_frame = tk.Frame(opt_frame)
-        key_frame.pack(fill=tk.X, padx=5, pady=5)
+        self.btn_open = ttk.Button(nav_frame, text="Open PDF", command=self.open_pdf, state="disabled", width=12)
+        self.btn_open.pack(side=tk.LEFT, padx=(0, 10))
         
-        tk.Label(key_frame, text="API Key:").grid(row=0, column=0, sticky="w", padx=(0,5))
-        
-        self.key_container = tk.Frame(key_frame)
-        self.key_container.grid(row=0, column=1, sticky="ew")
-        key_frame.columnconfigure(1, weight=1)
-        
-        self.key_status_label = tk.Label(key_frame, text="", font=("Arial", 9))
-        self.key_status_label.grid(row=1, column=0, columnspan=2, sticky="w", padx=5)
+        ttk.Button(nav_frame, text="<", width=3, command=self.prev_page).pack(side=tk.LEFT)
+        self.lbl_page = ttk.Label(nav_frame, text="Page: 0/0", width=12, anchor="center")
+        self.lbl_page.pack(side=tk.LEFT, padx=5)
+        ttk.Button(nav_frame, text=">", width=3, command=self.next_page).pack(side=tk.LEFT)
 
+        # 2. Setup / API Key
+        setup_frame = ttk.LabelFrame(content_box, text="Connection Setup", padding=15)
+        setup_frame.pack(fill=tk.X, pady=(0, 20))
+        
+        self.key_container = ttk.Frame(setup_frame)
+        self.key_container.pack(fill=tk.X)
         self._build_key_input_state()
         
-        # Disclaimer
-        tk.Label(opt_frame, text="Requirement: Valid API Key is needed to unlock features.", fg="gray", font=("Arial", 9)).pack(anchor="w", padx=5)
-        tk.Label(opt_frame, text="Tip: Select any citation or reference text to parse.", fg="gray", font=("Arial", 9)).pack(anchor="w", padx=5)
+        self.key_status_label = ttk.Label(setup_frame, text="", font=("Helvetica", 9))
+        self.key_status_label.pack(anchor="w", pady=(5,0))
+        
+        ttk.Label(setup_frame, text="Valid API Key required.", style="Status.TLabel").pack(anchor="w", pady=(10,0))
 
-        # Output Text Area
-        tk.Label(self.control_frame, text="Extracted BibTeX:").pack(anchor="w")
-        self.output_text = scrolledtext.ScrolledText(self.control_frame, height=20)
-        self.output_text.pack(fill=tk.BOTH, expand=True, pady=5)
+        # 3. Output Area
+        ttk.Label(content_box, text="Extracted BibTeX", style="Header.TLabel").pack(anchor="w", pady=(0, 5))
+        
+        self.output_text = scrolledtext.ScrolledText(content_box, height=20, bg=self.colors["entry_bg"], fg=self.colors["fg_text"], insertbackground="white", borderwidth=0, font=("Consolas", 10))
+        self.output_text.pack(fill=tk.BOTH, expand=True, pady=(0, 20))
         
         # Context Menu
-        self.context_menu = tk.Menu(self.root, tearoff=0)
+        self.context_menu = tk.Menu(self.root, tearoff=0, bg=self.colors["bg_panel"], fg=self.colors["fg_text"])
         self.context_menu.add_command(label="Copy Selection", command=self.copy_selection)
         self.output_text.bind("<Button-3>", self.show_context_menu)
         self.output_text.bind("<Button-2>", self.show_context_menu)
         self.output_text.bind("<Control-Button-1>", self.show_context_menu)
 
-        # Bottom Actions
-        action_frame = tk.Frame(self.control_frame)
-        action_frame.pack(fill=tk.X, pady=5)
+        # 4. Action Buttons
+        action_frame = ttk.Frame(content_box)
+        action_frame.pack(fill=tk.X)
         
-        tk.Button(action_frame, text="Copy All", command=self.copy_to_clipboard).pack(side=tk.LEFT, padx=2)
-        tk.Button(action_frame, text="Reset Output", command=self.clear_output).pack(side=tk.LEFT, padx=2)
+        ttk.Button(action_frame, text="Copy All", command=self.copy_to_clipboard, width=15).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Button(action_frame, text="Clear", command=self.clear_output, width=10).pack(side=tk.LEFT)
         
+        # 5. Global Status Bar
         self.status_var = tk.StringVar(value="Please enter API Key.")
-        tk.Label(self.control_frame, textvariable=self.status_var, bd=1, relief=tk.SUNKEN, anchor="w").pack(side=tk.BOTTOM, fill=tk.X)
+        self.status_bar = tk.Label(self.control_frame, textvariable=self.status_var, bg=self.colors["bg_root"], fg="gray", anchor="w", padx=10, pady=5, font=("Helvetica", 9))
+        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
     def _build_key_input_state(self):
         for widget in self.key_container.winfo_children():
             widget.destroy()
+            
+        ttk.Label(self.key_container, text="API Key:").pack(side=tk.LEFT, padx=(0,5))
         
-        self.key_container.columnconfigure(0, weight=1)
-        self.key_container.columnconfigure(1, weight=0)
+        self.key_entry = ttk.Entry(self.key_container, textvariable=self.api_key_var, show="*", width=20)
+        self.key_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
         
-        self.key_entry = tk.Entry(self.key_container, textvariable=self.api_key_var, show="*", width=30)
-        self.key_entry.grid(row=0, column=0, sticky="ew", padx=(0, 5))
-        
-        self.enter_btn = tk.Button(self.key_container, text="Verify", command=self.check_api_key, font=("Arial", 9), width=10)
-        self.enter_btn.grid(row=0, column=1)
+        self.enter_btn = ttk.Button(self.key_container, text="Connect", command=self.check_api_key, width=8)
+        self.enter_btn.pack(side=tk.LEFT)
 
     def check_api_key(self):
         key = self.api_key_var.get().strip()
@@ -158,7 +196,7 @@ class BibApp:
             messagebox.showerror("Error", "Please enter an API Key.")
             return
 
-        self.key_status_label.config(text="Verifying...", fg="blue")
+        self.key_status_label.config(text="Verifying...", foreground=self.colors["accent"])
         self.root.update_idletasks()
 
         def verify_wrapper():
@@ -196,7 +234,7 @@ class BibApp:
 
     def _on_key_error(self, msg):
         short_msg = (msg[:40] + '...') if len(msg) > 40 else msg
-        self.key_status_label.config(text=f"Error: {short_msg}", fg="red")
+        self.key_status_label.config(text=f"Error: {short_msg}", foreground=self.colors["error"])
         print(f"Key Error: {msg}")
 
     def _on_key_success(self, ctrl):
@@ -208,7 +246,7 @@ class BibApp:
         from llm_helper import LLMHelper
         models = LLMHelper.AVAILABLE_MODELS.get(provider, [current_model])
 
-        self.key_status_label.config(text=f"Connected ({provider})", fg="green")
+        self.key_status_label.config(text=f"Connected ({provider})", foreground=self.colors["success"])
         self.llm_controller = ctrl
         
         # Save Key
@@ -222,18 +260,15 @@ class BibApp:
         for widget in self.key_container.winfo_children():
             widget.destroy()
         
-        # 1. Label
-        tk.Label(self.key_container, text="Model:", fg="green", font=("Arial", 9, "bold")).pack(side=tk.LEFT, padx=(0,2))
+        ttk.Label(self.key_container, text="Model:").pack(side=tk.LEFT, padx=(0,5))
         
-        # 2. Combobox
         self.model_combo = ttk.Combobox(self.key_container, values=models, width=18, state="readonly")
         self.model_combo.set(current_model)
-        self.model_combo.pack(side=tk.LEFT, padx=2)
+        self.model_combo.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
         self.model_combo.bind("<<ComboboxSelected>>", self.on_model_changed)
         
-        # 3. Change Key Button
-        btn = tk.Button(self.key_container, text="Change Key", width=10, font=("Arial", 9), command=self.reset_api_ui)
-        btn.pack(side=tk.LEFT, padx=5)
+        btn = ttk.Button(self.key_container, text="Change", width=8, command=self.reset_api_ui)
+        btn.pack(side=tk.LEFT)
 
     def on_model_changed(self, event):
         if self.llm_controller:
@@ -275,26 +310,47 @@ class BibApp:
                 return
 
             self.update_status(f"Context Loaded ({len(full_text)} chars). Locating bibliography...")
-
-            narrowed_context = ""
-            if self.llm_controller:
-                range_info = self.llm_controller.resolve_bibliography_range(full_text)
-                if range_info:
-                    start_page = range_info.get("start_page")
-                    end_page = range_info.get("end_page")
-                    if isinstance(start_page, int) and isinstance(end_page, int):
-                        narrowed_context = self.pdf_engine.get_context_text_range(start_page, end_page)
-
-                    if narrowed_context:
-                        self.current_context = narrowed_context
-                        self.update_status(f"Context narrowed to pages {start_page}-{end_page}. Ready.")
-                        return
-
+            
+            # DEFAULT to full text immediately, so we are robust against LLM failures
             self.current_context = full_text
-            self.update_status(f"Context Loaded ({len(self.current_context)} chars). Ready.")
+            
+            try:
+                narrowed_context = ""
+                if self.llm_controller:
+                    range_info = self.llm_controller.resolve_bibliography_range(full_text)
+                    if range_info:
+                        start_page = range_info.get("start_page")
+                        end_page = range_info.get("end_page")
+                        if isinstance(start_page, int) and isinstance(end_page, int):
+                            narrowed_context = self.pdf_engine.get_context_text_range(start_page, end_page)
+
+                        if narrowed_context:
+                            self.current_context = narrowed_context
+                            self.update_status(f"Context narrowed to pages {start_page}-{end_page}. Ready.")
+            except Exception as e:
+                print(f"[WARN] Bibliography narrowing failed: {e}")
+                self.update_status(f"Bibliography Auto-Locate Failed (Using Full Text).")
+
+            # --- New: Detect Style from Page 1 ---
+            self._detect_style_in_background()
         except Exception as e:
             print(f"Context error: {e}")
             self.update_status("Context Load Failed (Check Console).")
+
+    def _detect_style_in_background(self):
+        try:
+            # Extract text from first few pages (up to 5) to find Main Text
+            page_limit = min(5, self.pdf_engine.get_page_count())
+            first_pages_text = self.pdf_engine.get_context_text_range(1, page_limit) 
+            
+            if first_pages_text and self.llm_controller:
+                style = self.llm_controller.detect_citation_style(first_pages_text)
+                self.citation_style_hint = style
+                # Update UI Status if possible, or log it
+                print(f"[DEBUG] Detected Citation Style: {style}")
+                self.update_status(f"{self.status_var.get()} [Style: {style}]")
+        except Exception as e:
+            print(f"[WARN] Style detection failed: {e}")
 
     def render_page(self):
         pix = self.pdf_engine.get_page_pixmap(self.current_page, zoom=self.zoom_level)
@@ -394,12 +450,26 @@ class BibApp:
         def task():
             try:
                 # LLM Call
-                result = self.llm_controller.resolve_citation(text, self.current_context)
-                self.append_to_output(result + "\n\n")
-                self.update_status("Resolution Complete.")
+                result = self.llm_controller.resolve_citation(
+                    text, 
+                    self.current_context, 
+                    style_hint=self.citation_style_hint
+                )
+                if result:
+                    self.append_to_output(str(result) + "\n\n")
+                    self.update_status("Resolution Complete.")
+                else:
+                     self.append_to_output("% No result returned.\n\n")
+                     self.update_status("Resolution Complete (Empty).")
             except Exception as e:
-                self.append_to_output(f"% [Error] {e}\n\n")
-                self.update_status(f"Error: {e}")
+                err_str = str(e).lower()
+                if "429" in err_str or "rate limit" in err_str or "quota" in err_str:
+                    msg = "% [Error] LLM rate limit exceeded. Please wait a moment."
+                else:
+                    msg = f"% [Error] {e}"
+                
+                self.append_to_output(msg + "\n\n")
+                self.update_status("Error: Rate Limit Exceeded" if "rate limit" in err_str or "429" in err_str else f"Error: {e}")
 
         threading.Thread(target=task).start()
 
