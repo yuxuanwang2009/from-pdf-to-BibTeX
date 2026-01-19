@@ -39,6 +39,7 @@ class LLMController:
         4. OUTPUT:
            - Return a block of BibTeX entries, separated by newlines.
            - Return ONLY the BibTeX. No markdown, no conversation.
+           - Error messages, if any, need to be commented out using "%".
         """
         
         # We use the existing query method from LLMHelper
