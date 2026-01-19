@@ -2,6 +2,9 @@
 
 An intelligent, LLM-driven GUI tool for extracting BibTeX citations from PDFs.
 
+![Demo Application Interface](demo.png)
+*The interface showing a PDF with selected text (left) and the extracted BibTeX result (right).*
+
 ## Logic
 This tool relies entirely on a generic LLM (Gemini or OpenAI) to "see" your document and understand your requests, bypassing brittle regex parsers.
 
