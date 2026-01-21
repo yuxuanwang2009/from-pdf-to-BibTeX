@@ -8,4 +8,4 @@ legacy/
 *.pdf
 .bib_extractor_config.json
 texput.log
-tests/test_pdfs/
+tests/
